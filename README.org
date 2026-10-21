@@ -1,0 +1,77 @@
+#+title: LispM Stickies
+
+#+HTML: <p align="center"><a href="https://github.com/LispMachineLab/lispm-stickies/actions/workflows/test.yml"><img src="https://github.com/LispMachineLab/lispm-stickies/actions/workflows/test.yml/badge.svg" alt="test" /></a></p>
+
+Stickies, Mac OS 9's notes, as an application of [[https://github.com/LispMachineLab/lispm-desktop][LispM Desktop]], which its App Store
+installs from Productivity.  In code, the prefix is ~lispm-stickies-~.
+
+* What it does
+
+Each note is a small window of its own over the desktop, drawn as Mac OS 9.0.4's Stickies drew
+it, its colours and boxes taken pixel for pixel from the real thing:
+
+- The note in front wears a title bar of pinstripes, with a close box on the left and a zoom box
+  on the right, and a grow box in its corner; the others are plain paper, lit along their top.
+- Seven colours, from the Color menu: Yellow, Blue, Green, Pink, Purple, Gray, Black & White.
+- The close box throws the note away, asking first when it holds text.  Quitting Stickies only
+  puts the notes away: opening it again brings them back where they were.
+- A double click on the title bar rolls the note up into it, its first line for a title.  The
+  zoom box sizes the note to its text, and back.
+- A note is written as it is typed.
+
+The notes are kept in one org file, =~/.emacs.d/stickies.org= (~lispm-stickies-file~), a heading
+each, so agents and org read them as any other:
+
+#+begin_src org
+,* Buy milk
+:PROPERTIES:
+:ID:       20261021T153012-3f2a
+:COLOR:    yellow
+:GEOMETRY: 120 80 240 160
+:CREATED:  [2026-10-21 Wed 15:30]
+:MODIFIED: [2026-10-21 Wed 15:31]
+:END:
+Buy milk
+and eggs
+#+end_src
+
+A line of a note that would start a heading there is written a level deeper.  Stickies writes
+the file while it runs: edit it while Stickies is closed.
+
+From the keyboard, in a note:
+
+| =C-c C-n= | a new note               | =C-c C-f= | the next note                 |
+| =C-c C-k= | throw the note away      | =C-c C-b= | the previous note             |
+| =C-c C-l= | its colour               | =C-c C-r= | roll it up, or down           |
+| =C-c C-z= | zoom it                  | =C-c C-d= | when it was made and changed  |
+| =C-c C-q= | quit Stickies            |           |                               |
+
+The notes are written in ~variable-pitch~, as Stickies wrote in Geneva; set ~lispm-stickies-face~
+to nil for Emacs's default.
+
+* Installation
+
+From LispM Desktop's App Store: Productivity, Stickies, Get.  Removing it there quits Stickies and
+takes it away; the notes stay in their file.
+
+By hand, from a checkout, in an Emacs running LispM Desktop:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/src/lispm-stickies")
+(require 'lispm-stickies)
+#+end_src
+
+The notes draw their own frame, an edge of their colour, where LispM Desktop lets a window do so
+(~lispm-desktop-platinum-own-frame~); an older desktop frames them as its other windows.
+
+* Tests
+
+#+begin_src sh
+make test LISPM_DESKTOP=../lispm-desktop/lisp
+#+end_src
+
+They need no window system.
+
+* License
+
+GNU Affero General Public License, version 3 or later; see [[file:LICENSE][LICENSE]].
