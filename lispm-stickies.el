@@ -60,6 +60,12 @@
 ;; deeper, so it stays the note's own.  Stickies writes the file while it
 ;; runs: edit it while Stickies is closed.
 ;;
+;; Programs, such as an agent's skill, list the notes with
+;; `lispm-stickies-notes', find one by its identity with
+;; `lispm-stickies-find-note', make one with `lispm-stickies-new-note', change
+;; it with `lispm-stickies-set-text' and `lispm-stickies-set-color', and
+;; bring it in front with `lispm-stickies-show-note'.
+;;
 ;; From the keyboard, in a note:
 ;;
 ;;   C-c C-n  a new note             C-c C-f  the next note
@@ -177,7 +183,9 @@ blank, shortened, or \"Note\"."
 
 (defun lispm-stickies--parse (text)
   "Return the notes of TEXT, the contents of `lispm-stickies-file', as
-plists: :id, :color, :geometry, :rolled, :created, :modified and :text."
+plists: :id, :color, :geometry, :rolled, :created, :modified and :text.
+A note written by hand without an identity gets one made of its place
+and text, the same each time the file is read."
   (let (notes)
     (with-temp-buffer
       (insert text)
@@ -195,17 +203,20 @@ plists: :id, :color, :geometry, :rolled, :created, :modified and :text."
                 (push (cons (upcase (match-string 1)) (match-string 2)) properties))
               (forward-line))
             (forward-line))
-          (let* ((body (buffer-substring-no-properties (min (point) end) end))
+          (let* ((body (lispm-stickies--unescape
+                        (string-remove-suffix "\n" (buffer-substring-no-properties (min (point) end) end))))
                  (geometry (mapcar #'string-to-number
                                    (split-string (or (cdr (assoc "GEOMETRY" properties)) ""))))
                  (color (intern-soft (or (cdr (assoc "COLOR" properties)) ""))))
-            (push (list :id (or (cdr (assoc "ID" properties)) (lispm-stickies--new-id))
+            (push (list :id (or (cdr (assoc "ID" properties))
+                                (format "note-%s" (substring (md5 (format "%d\n%s" (length notes) body))
+                                                             0 12)))
                         :color (if (assq color lispm-stickies-colors) color lispm-stickies-color)
                         :geometry (and (= (length geometry) 4) geometry)
                         :rolled (equal (cdr (assoc "ROLLED" properties)) "t")
                         :created (lispm-stickies--parse-timestamp (cdr (assoc "CREATED" properties)))
                         :modified (lispm-stickies--parse-timestamp (cdr (assoc "MODIFIED" properties)))
-                        :text (lispm-stickies--unescape (string-remove-suffix "\n" body)))
+                        :text body)
                   notes))
           (goto-char end))))
     (nreverse notes)))
@@ -365,17 +376,20 @@ it rolls down to."
 (defvar lispm-stickies--save-timer nil
   "Pending timer writing the notes, if any.")
 
+(defun lispm-stickies--read-file ()
+  "Return the notes `lispm-stickies-file' holds, plists as
+`lispm-stickies--parse' returns them."
+  (when (file-readable-p lispm-stickies-file)
+    (lispm-stickies--parse
+     (with-temp-buffer
+       (let ((coding-system-for-read 'utf-8))
+         (insert-file-contents lispm-stickies-file))
+       (buffer-string)))))
+
 (defun lispm-stickies--load ()
   "Read the notes from `lispm-stickies-file', unless they are read."
   (unless lispm-stickies--loaded
-    (setq lispm-stickies--notes
-          (mapcar #'lispm-stickies--make-note
-                  (when (file-readable-p lispm-stickies-file)
-                    (lispm-stickies--parse
-                     (with-temp-buffer
-                       (let ((coding-system-for-read 'utf-8))
-                         (insert-file-contents lispm-stickies-file))
-                       (buffer-string)))))
+    (setq lispm-stickies--notes (mapcar #'lispm-stickies--make-note (lispm-stickies--read-file))
           lispm-stickies--loaded t)))
 
 (defun lispm-stickies-save ()
@@ -839,23 +853,23 @@ none."
         (select-frame-set-input-focus front)))
     (lispm-desktop-apps-set-frontmost 'stickies)))
 
-(defun lispm-stickies-new-note (&optional text)
-  "Open a new note, in front of the others; it holds TEXT, if given.
-Return its buffer."
+(defun lispm-stickies-new-note (&optional text color)
+  "Open a new note, in front of the others; it holds TEXT, if given, on
+paper of COLOR, a key of `lispm-stickies-colors', by default
+`lispm-stickies-color'.  Return its buffer."
   (interactive)
+  (when (and color (not (assq color lispm-stickies-colors)))
+    (error "No colour %s; Stickies has %s" color
+           (mapconcat (lambda (entry) (symbol-name (car entry))) lispm-stickies-colors ", ")))
   (lispm-stickies--load)
   (let* ((now (current-time))
          (buffer (lispm-stickies--make-note
-                  (list :id (lispm-stickies--new-id) :color lispm-stickies-color
+                  (list :id (lispm-stickies--new-id) :color (or color lispm-stickies-color)
                         :text (or text "") :created now :modified now
                         :geometry (lispm-stickies--new-geometry (lispm-stickies--front-frame))))))
     (setq lispm-stickies--notes (append lispm-stickies--notes (list buffer)))
     ;; A note opened before Stickies, as from the keyboard, opens the rest.
-    (unless (lispm-stickies--running-p)
-      (dolist (other lispm-stickies--notes)
-        (unless (eq other buffer)
-          (lispm-stickies--show other))))
-    (lispm-stickies--show buffer)
+    (lispm-stickies-show-note buffer)
     (lispm-stickies--save-soon)
     buffer))
 
@@ -990,6 +1004,44 @@ they were the next time it opens."
           (lispm-desktop-app-window-close (lispm-stickies--kind buffer))
           (lispm-stickies--forget buffer)
           (kill-buffer buffer))))))
+
+;;;; For programs
+
+(defun lispm-stickies-notes ()
+  "Return the notes, the oldest first, as plists: :id, a string; :color,
+a key of `lispm-stickies-colors'; :text; :created and :modified, times;
+:geometry and :rolled, where its window was and whether it was rolled
+up.  They are Stickies' own while it has them read, else
+`lispm-stickies-file' is read, and nothing changes."
+  (if lispm-stickies--loaded
+      (mapcar #'lispm-stickies--plist (seq-filter #'buffer-live-p lispm-stickies--notes))
+    (lispm-stickies--read-file)))
+
+(defun lispm-stickies-find-note (id)
+  "Return the buffer of the note whose identity is ID, a string, or nil
+when there is none.  The notes are read first, when there is one."
+  (when (or lispm-stickies--loaded
+            (seq-find (lambda (note) (equal (plist-get note :id) id)) (lispm-stickies--read-file)))
+    (lispm-stickies--load)
+    (seq-find (lambda (buffer) (equal (buffer-local-value 'lispm-stickies--id buffer) id))
+              (seq-filter #'buffer-live-p lispm-stickies--notes))))
+
+(defun lispm-stickies-show-note (buffer)
+  "Bring the note BUFFER in front over the desktop, Stickies' other notes
+opened too when it was not running; return its window."
+  (unless (lispm-stickies--running-p)
+    (dolist (other lispm-stickies--notes)
+      (unless (eq other buffer)
+        (lispm-stickies--show other))))
+  (lispm-stickies--show buffer))
+
+(defun lispm-stickies-set-text (buffer text)
+  "Make TEXT the text of the note BUFFER, which is written soon after."
+  (with-current-buffer buffer
+    (unless (equal text (buffer-string))
+      (erase-buffer)
+      (insert text)
+      (goto-char (point-min)))))
 
 ;;;; Menus
 
