@@ -195,6 +195,36 @@ once the alert says so, an empty one at once."
       (should-not (lispm-stickies--parse (with-temp-buffer (insert-file-contents lispm-stickies-file)
                                                            (buffer-string)))))))
 
+(ert-deftest lispm-stickies-test-for-programs ()
+  "Programs list the notes, read from the file while Stickies is closed,
+which changes nothing; find one by its identity, a note written by hand
+too; change its text; and make one of a colour."
+  (lispm-stickies-test--with-file
+    (with-temp-file lispm-stickies-file
+      (insert "#+title: Stickies\n\n* Plain\nJust text\n"
+              "* Kept\n:PROPERTIES:\n:ID: k1\n:COLOR: blue\n:END:\nKept\n"))
+    (let ((notes (lispm-stickies-notes)))
+      (should (equal (mapcar (lambda (note) (plist-get note :text)) notes) '("Just text" "Kept")))
+      (should (equal (plist-get (cadr notes) :id) "k1"))
+      (should (equal (plist-get (car notes) :id) (plist-get (car (lispm-stickies-notes)) :id)))
+      (should-not (lispm-stickies-find-note "none"))
+      (should-not lispm-stickies--loaded)
+      (let ((plain (lispm-stickies-find-note (plist-get (car notes) :id))))
+        (should lispm-stickies--loaded)
+        (should (equal (with-current-buffer plain (buffer-string)) "Just text"))
+        (lispm-stickies-set-text plain "Call Sam at 5")
+        (should (equal (plist-get (car (lispm-stickies-notes)) :text) "Call Sam at 5"))))
+    (cl-letf (((symbol-function 'lispm-stickies--show) #'ignore)
+              ((symbol-function 'lispm-stickies--new-geometry) (lambda (_) '(60 60 240 160))))
+      (should (eq (buffer-local-value 'lispm-stickies--note-color
+                                      (lispm-stickies-new-note "Parked on level 3" 'pink))
+                  'pink))
+      (should-error (lispm-stickies-new-note "Mauve" 'mauve)))
+    (lispm-stickies-quit)
+    (should (equal (mapcar (lambda (note) (list (plist-get note :text) (plist-get note :color)))
+                           (lispm-stickies-notes))
+                   '(("Call Sam at 5" yellow) ("Kept" blue) ("Parked on level 3" pink))))))
+
 (ert-deftest lispm-stickies-test-note-buffer ()
   "A note's buffer is its paper: coloured, edged by its fringes, a title
 bar and a bottom drawn for it, no scroll bar, kept out of the windows'

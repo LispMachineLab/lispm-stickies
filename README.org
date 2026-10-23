@@ -49,6 +49,19 @@ From the keyboard, in a note:
 The notes are written in ~variable-pitch~, as Stickies wrote in Geneva; set ~lispm-stickies-face~
 to nil for Emacs's default.
 
+* For programs
+
+Agents and other programs use these, rather than the file, which Stickies writes while it runs:
+
+| ~(lispm-stickies-notes)~                 | the notes as plists (~:id~, ~:color~, ~:text~, ~:created~, ~:modified~), read from the file while Stickies is closed |
+| ~(lispm-stickies-find-note ID)~          | the buffer of the note ~ID~                                     |
+| ~(lispm-stickies-new-note TEXT COLOR)~   | a new note in front, holding ~TEXT~, of ~COLOR~ (~yellow~, ~blue~, ...) |
+| ~(lispm-stickies-set-text BUFFER TEXT)~  | a note's text                                                   |
+| ~(lispm-stickies-set-color COLOR BUFFER)~ | a note's colour                                                |
+| ~(lispm-stickies-show-note BUFFER)~      | a note in front, Stickies opened if it was not                  |
+
+LispM Agent's skill for notes, in the App Store's catalog, is made of them.
+
 * Installation
 
 From LispM Desktop's App Store: Productivity, Stickies, Get.  Removing it there quits Stickies and
