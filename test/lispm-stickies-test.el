@@ -23,25 +23,18 @@
 
 ;;; Commentary:
 
-;; Run with `make test', LispM Desktop's lisp/ on the load path.  They need
-;; no window system: notes are read, written and thrown away without their
-;; windows, and the drawings are read pixel by pixel.
+;; Run with `make test'.  They need no window system nor LispM Desktop:
+;; notes are read, written, shown in windows of a batch Emacs's frame and
+;; thrown away.
 
 ;;; Code:
 
 (require 'ert)
-(require 'dom)
 (require 'lispm-stickies)
 
-(defun lispm-stickies-test--pixel (svg x y)
-  "Return the colour of pixel X, Y of SVG: the last rectangle over it."
-  (let (color)
-    (dolist (rect (dom-by-tag svg 'rect))
-      (let ((rx (dom-attr rect 'x)) (ry (dom-attr rect 'y))
-            (w (dom-attr rect 'width)) (h (dom-attr rect 'height)))
-        (when (and (<= rx x) (< x (+ rx w)) (<= ry y) (< y (+ ry h)))
-          (setq color (upcase (dom-attr rect 'fill))))))
-    color))
+(defconst lispm-stickies-test--directory
+  (file-name-directory (directory-file-name (file-name-directory (or load-file-name buffer-file-name))))
+  "The repository's root.")
 
 (defmacro lispm-stickies-test--with-file (&rest body)
   "Run BODY with the notes kept in a file of their own, Stickies closed."
@@ -66,37 +59,51 @@ PROPERTIES as `lispm-stickies--parse' returns them."
     (setq lispm-stickies--notes (append lispm-stickies--notes (list buffer)))
     buffer))
 
-(ert-deftest lispm-stickies-test-defined-on-load ()
-  "Loaded, Stickies is one of the desktop's applications, with its icon and
-the menus of Mac OS 9's Stickies, running while a note is open."
-  (let ((props (alist-get 'stickies lispm-desktop-apps)))
-    (should (equal (plist-get props :name) "Stickies"))
-    (should (file-readable-p (plist-get props :icon)))
-    (should (eq (plist-get props :activate) #'lispm-stickies))
-    (should (equal (mapcar #'cadr (funcall (plist-get props :menus)))
-                   '("File" "Edit" "Note" "Color")))
-    (let ((lispm-stickies--notes nil))
-      (should-not (funcall (plist-get props :running)))))
-  (should (memq #'lispm-stickies--moved lispm-desktop-platinum-frame-moved-functions))
-  (should (memq #'lispm-stickies-save kill-emacs-hook)))
+(ert-deftest lispm-stickies-test-knows-no-desktop ()
+  "Stickies stands alone: none of its files but the tests names LispM
+Desktop's code, which shows the notes its own way from its side."
+  (dolist (file (directory-files lispm-stickies-test--directory t "\\.el\\'"))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (should-not (and (re-search-forward "lispm-desktop\\|platinum" nil t)
+                       (format "%s:%d" (file-name-nondirectory file) (line-number-at-pos)))))))
+
+(ert-deftest lispm-stickies-test-loaded ()
+  "Loaded, Stickies has its icon, opens from its command and writes its
+notes as Emacs quits; it shows them in windows of the selected frame."
+  (should (file-readable-p lispm-stickies-icon))
+  (should (commandp #'lispm-stickies))
+  (should (memq #'lispm-stickies-save kill-emacs-hook))
+  (should (eq lispm-stickies-show-note-function #'lispm-stickies-show-note-in-window)))
 
 (ert-deftest lispm-stickies-test-colors ()
   "The Color menu lists Stickies' seven colours in its order, the note in
 front's checked."
   (should (equal (mapcar #'cadr lispm-stickies-colors)
                  '("Yellow" "Blue" "Green" "Pink" "Purple" "Gray" "Black & White")))
-  (should (equal (lispm-stickies--color 'yellow 'paper) "#FFFF99"))
-  (should (equal (lispm-stickies--color 'unknown 'edge) "#FFCC00"))
+  (should (equal (lispm-stickies-color-value 'yellow 'paper) "#FFFF99"))
+  (should (equal (lispm-stickies-color-value 'unknown 'edge) "#FFCC00"))
+  (should (equal (lispm-stickies--blend "#FFFF99" "#FF9900" 0.5) "#FFCC4C"))
   (lispm-stickies-test--with-file
-    (let ((note (lispm-stickies-test--note "Hello")))
+    (let ((note (lispm-stickies-test--note "Hello"))
+          (changed 0))
       (with-current-buffer note
-        (lispm-stickies-set-color 'pink))
-      (cl-letf (((symbol-function 'lispm-stickies--front-frame) (lambda () 'frame))
-                ((symbol-function 'lispm-stickies--note) (lambda (_) note)))
-        (should (equal (mapcar (lambda (item) (plist-get item :label))
-                               (seq-filter (lambda (item) (plist-get item :checked))
-                                           (lispm-stickies--color-items)))
-                       '("Pink")))))))
+        (add-hook 'lispm-stickies-changed-hook (lambda () (cl-incf changed)) nil t)
+        (lispm-stickies-set-color 'pink)
+        (should (eq (lispm-stickies-note-color note) 'pink))
+        (should (= changed 1))
+        (should (equal (seq-some (lambda (spec) (and (consp spec) (plist-get spec :background)))
+                                 (alist-get 'default face-remapping-alist))
+                       "#FFCCCC"))
+        ;; The menu bar's Color menu has them all, the note's checked.
+        (let ((items (seq-filter #'consp (cdr (keymap-lookup lispm-stickies-note-mode-map
+                                                             "<menu-bar> <stickies> <Color>")))))
+          (should (= (length items) 7))
+          (should (equal (seq-keep (lambda (item)
+                                     (and (eval (cdr (plist-get (nthcdr 4 item) :button)) t)
+                                          (nth 2 item)))
+                                   items)
+                         '("Pink"))))))))
 
 (ert-deftest lispm-stickies-test-title ()
   "A note is titled by its first line that is not blank, shortened."
@@ -164,8 +171,7 @@ notes' windows close, as timers do."
   (lispm-stickies-test--with-file
     (dolist (text '("One" "Two" "Three"))
       (lispm-stickies-test--note text))
-    (cl-letf (((symbol-function 'lispm-desktop-app-window-close)
-               (lambda (_kind) (lispm-stickies-save))))
+    (let ((lispm-stickies-hide-note-function (lambda (_buffer) (lispm-stickies-save))))
       (lispm-stickies-quit))
     (should (equal (mapcar (lambda (note) (plist-get note :text))
                            (lispm-stickies--parse (with-temp-buffer
@@ -175,21 +181,25 @@ notes' windows close, as timers do."
 
 (ert-deftest lispm-stickies-test-throwing-a-note-away ()
   "Killing a note's buffer throws the note away; one holding text only
-once the alert says so, an empty one at once."
+once `lispm-stickies-confirm-function' says so, an empty one at once,
+and what shows it is taken away."
   (lispm-stickies-test--with-file
     (let ((empty (lispm-stickies-test--note " \n"))
           (full (lispm-stickies-test--note "Keep me"))
-          (asked 0))
-      (cl-letf (((symbol-function 'lispm-desktop-popup-alert)
-                 (lambda (&rest _) (cl-incf asked) 'keep)))
-        (lispm-stickies-close-note empty)
-        (should (= asked 0))
-        (should-not (buffer-live-p empty))
-        (lispm-stickies-close-note full)
-        (should (= asked 1))
-        (should (buffer-live-p full)))
-      (cl-letf (((symbol-function 'lispm-desktop-popup-alert) (lambda (&rest _) 'throw)))
-        (lispm-stickies-close-note full))
+          (asked 0)
+          (hidden nil))
+      (let ((lispm-stickies-hide-note-function (lambda (buffer) (push buffer hidden))))
+        (let ((lispm-stickies-confirm-function (lambda (&rest _) (cl-incf asked) nil)))
+          (lispm-stickies-close-note empty)
+          (should (= asked 0))
+          (should-not (buffer-live-p empty))
+          (should (equal hidden (list empty)))
+          (lispm-stickies-close-note full)
+          (should (= asked 1))
+          (should (buffer-live-p full)))
+        (let ((lispm-stickies-confirm-function #'always))
+          (lispm-stickies-close-note full))
+        (should (equal hidden (list full empty))))
       (should-not (buffer-live-p full))
       (should-not lispm-stickies--notes)
       (should-not (lispm-stickies--parse (with-temp-buffer (insert-file-contents lispm-stickies-file)
@@ -214,10 +224,8 @@ too; change its text; and make one of a colour."
         (should (equal (with-current-buffer plain (buffer-string)) "Just text"))
         (lispm-stickies-set-text plain "Call Sam at 5")
         (should (equal (plist-get (car (lispm-stickies-notes)) :text) "Call Sam at 5"))))
-    (cl-letf (((symbol-function 'lispm-stickies--show) #'ignore)
-              ((symbol-function 'lispm-stickies--new-geometry) (lambda (_) '(60 60 240 160))))
-      (should (eq (buffer-local-value 'lispm-stickies--note-color
-                                      (lispm-stickies-new-note "Parked on level 3" 'pink))
+    (let ((lispm-stickies-show-note-function #'ignore))
+      (should (eq (lispm-stickies-note-color (lispm-stickies-new-note "Parked on level 3" 'pink))
                   'pink))
       (should-error (lispm-stickies-new-note "Mauve" 'mauve)))
     (lispm-stickies-quit)
@@ -226,141 +234,100 @@ too; change its text; and make one of a colour."
                    '(("Call Sam at 5" yellow) ("Kept" blue) ("Parked on level 3" pink))))))
 
 (ert-deftest lispm-stickies-test-note-buffer ()
-  "A note's buffer is its paper: coloured, edged by its fringes, a title
-bar and a bottom drawn for it, no scroll bar, kept out of the windows'
-buffer menus."
+  "A note's buffer is its paper, its fringes its edges, named after its
+first line, as that changes."
   (lispm-stickies-test--with-file
-    (with-current-buffer (lispm-stickies-test--note "Hello" :color 'blue)
-      (should (equal (seq-some (lambda (spec) (and (consp spec) (plist-get spec :background)))
-                               (alist-get 'default face-remapping-alist))
-                     "#99FFFF"))
-      (should (equal (seq-some (lambda (spec) (and (consp spec) (plist-get spec :background)))
-                               (alist-get 'fringe face-remapping-alist))
-                     "#00CCFF"))
-      (should (equal tab-line-format '(:eval (lispm-stickies--title-bar))))
-      (should (equal mode-line-format '(:eval (lispm-stickies--bottom))))
-      (should (= left-fringe-width 1))
-      (should-not lispm-desktop-platinum-listed)
-      (should (eq (lispm-stickies--scroll-bar (current-buffer)) 'no))
-      (should (eq (keymap-lookup lispm-stickies-note-mode-map "C-c C-n") #'lispm-stickies-new-note)))
-    (with-temp-buffer
-      (should-not (lispm-stickies--scroll-bar (current-buffer))))))
+    (let ((note (lispm-stickies-test--note "Hello" :color 'blue)))
+      (with-current-buffer note
+        (should (equal (seq-some (lambda (spec) (and (consp spec) (plist-get spec :background)))
+                                 (alist-get 'default face-remapping-alist))
+                       "#99FFFF"))
+        (should (equal (seq-some (lambda (spec) (and (consp spec) (plist-get spec :background)))
+                                 (alist-get 'fringe face-remapping-alist))
+                       "#00CCFF"))
+        (should (equal (buffer-name) "*Note: Hello*"))
+        (goto-char (point-min))
+        (insert "Buy milk\n")
+        (should (equal (buffer-name) "*Note: Buy milk*"))
+        (should (equal (lispm-stickies-note-title note) "Buy milk"))
+        (should (eq (keymap-lookup lispm-stickies-note-mode-map "C-c C-n") #'lispm-stickies-new-note))))))
 
-(ert-deftest lispm-stickies-test-title-bar-as-stickies-drew-it ()
-  "The front note's title bar is Mac OS 9.0.4's Stickies', pixel for pixel:
-pinstripes of every other pixel in the edge colour, the close box five
-pixels in from the left edge and the zoom box from the right, two pixels
-down; another note's is plain paper, lit along its top."
-  (let* ((width 102)
-         (svg (lispm-stickies-draw-title-bar 'yellow width 10 t))
-         (inactive (lispm-stickies-draw-title-bar 'yellow width 10 nil)))
-    (cl-flet ((at (x y) (lispm-stickies-test--pixel svg x y)))
-      (should (equal (list (at 0 0) (at 50 0) (at 0 5) (at (1- width) 5)) (make-list 4 "#FFCC00")))
-      ;; The pinstripes.
-      (should (equal (list (at 1 1) (at 2 1) (at 1 2) (at 2 2) (at 50 9) (at 51 9))
-                     '("#FFCC00" "#FFFF99" "#FFFF99" "#FFCC00" "#FFFF99" "#FFCC00")))
-      ;; The close box, from column 5 to 11, rows 2 to 8.
-      (should (equal (mapcar (lambda (x) (at x 2)) '(5 6 10 11 12))
-                     '("#FFFF99" "#FFFF99" "#FFFF99" "#FF9900" "#FFCC00")))
-      (should (equal (mapcar (lambda (x) (at x 3)) '(5 6 9 10 11))
-                     '("#FFFF99" "#FF9900" "#FF9900" "#FFFF99" "#FF9900")))
-      (should (equal (mapcar (lambda (y) (at 6 y)) '(4 6 7)) '("#FF9900" "#FF9900" "#FFFF99")))
-      (should (equal (mapcar (lambda (x) (at x 8)) '(4 5 11)) '("#FFCC00" "#FF9900" "#FF9900")))
-      ;; The zoom box, its diagonal and its right and bottom lines.
-      (let ((right (- width 6)))
-        (should (equal (mapcar (lambda (y) (at right y)) '(2 5 8)) (make-list 3 "#FF9900")))
-        (should (equal (list (at (- width 8) 3) (at (- width 9) 4) (at (- width 10) 5) (at (- width 11) 6))
-                       (make-list 4 "#FF9900")))
-        (should (equal (list (at (- width 12) 8) (at (- width 12) 7) (at (- width 7) 3))
-                       '("#FF9900" "#FFFF99" "#FFFF99")))))
-    (cl-flet ((at (x y) (lispm-stickies-test--pixel inactive x y)))
-      (should (equal (list (at 1 0) (at 50 0) (at 8 3) (at 50 5) (at (1- width) 5) (at 0 5))
-                     '("#FFFFFF" "#FFFFFF" "#FFFF99" "#FFFF99" "#FFCC00" "#FFCC00"))))))
+(ert-deftest lispm-stickies-test-shown-in-windows ()
+  "Without a frontend, a note is shown in a window of the selected frame:
+the one showing a note, another one otherwise; the next and previous
+notes come in turn, and Stickies opens on the note in front."
+  (lispm-stickies-test--with-file
+    (save-window-excursion
+      (delete-other-windows)
+      (let* ((one (lispm-stickies-test--note "One"))
+             (two (lispm-stickies-test--note "Two"))
+             (other (selected-window)))
+        (should-not (lispm-stickies-running-p))
+        (let ((window (lispm-stickies-show-note one)))
+          (should (eq (window-buffer window) one))
+          (should (eq window (selected-window)))
+          (should (lispm-stickies-running-p))
+          (should (eq (funcall lispm-stickies-front-note-function) one))
+          ;; From a note, the next takes its window.
+          (lispm-stickies-next-note)
+          (should (eq (window-buffer window) two))
+          (lispm-stickies-next-note)
+          (should (eq (window-buffer window) one))
+          (lispm-stickies-previous-note)
+          (should (eq (window-buffer window) two))
+          (select-window other)
+          (should (eq (funcall lispm-stickies-front-note-function) two))
+          (with-temp-buffer
+            (lispm-stickies)
+            (should (eq (window-buffer) two))))))))
 
-(ert-deftest lispm-stickies-test-boxes-clear-of-resize-corners ()
-  "On macOS, which resizes an undecorated frame from a square at each
-corner, the boxes stand past the squares whose rows they cross, so a
-press reaches them: the top ones, and on a note rolled up the bottom ones
-too; elsewhere they stand where Stickies drew them."
-  (let ((width 160)
-        (height 160))
-    (cl-letf (((symbol-function 'framep) (lambda (_) 'ns))
-              ((symbol-function 'frame-parameter) (lambda (_ parameter) (eq parameter 'undecorated)))
-              ((symbol-function 'frame-pixel-height) (lambda (_) height)))
-      (should (equal (lispm-stickies--box-insets 'note 10) '(12 . 12)))
-      (setq height 17)
-      (should (equal (lispm-stickies--box-insets 'note 17) '(12 . 15))))
-    (cl-letf (((symbol-function 'framep) (lambda (_) 'x))
-              ((symbol-function 'frame-pixel-height) (lambda (_) 17)))
-      (should (equal (lispm-stickies--box-insets 'note 17) '(5 . 5))))
-    (let ((svg (lispm-stickies-draw-title-bar 'yellow width 10 t nil nil '(12 . 12))))
-      (cl-flet ((at (x y) (lispm-stickies-test--pixel svg x y)))
-        ;; The close box from column 12, the zoom box to column width - 13.
-        (should (equal (list (at 13 3) (at 18 2) (at 12 8) (at 11 7))
-                       '("#FF9900" "#FF9900" "#FF9900" "#FFCC00")))
-        (should (equal (list (at (- width 13) 2) (at (- width 19) 8) (at (- width 12) 8))
-                       '("#FF9900" "#FF9900" "#FFCC00")))))))
-
-(ert-deftest lispm-stickies-test-rolled-note-made-taller ()
-  "A note rolled up that the window system makes taller, as macOS does when
-its edge is dragged, is rolled down; its own sizes, rolled up or down,
-reported late, are not taken so."
-  (let ((rolled-down 0)
-        (height nil))
-    (cl-letf (((symbol-function 'window-frame) (lambda (_) 'note))
-              ((symbol-function 'lispm-desktop-app-window-rolled-p) #'always)
-              ((symbol-function 'lispm-desktop-platinum-rolled-up-height) (lambda (_) 144))
-              ((symbol-function 'lispm-stickies--rolled-height) (lambda (_) 17))
-              ((symbol-function 'frame-text-height) (lambda (_) height))
-              ((symbol-function 'lispm-desktop-app-window-roll-down) (lambda (_) (cl-incf rolled-down)))
-              ((symbol-function 'lispm-stickies--remember) #'ignore)
-              ((symbol-function 'lispm-stickies--save-soon) #'ignore))
-      (dolist (h '(17 144))
-        (setq height h)
-        (lispm-stickies--resized 'window))
-      (should (= rolled-down 0))
-      (setq height 119)
-      (lispm-stickies--resized 'window)
-      (should (= rolled-down 1)))))
-
-(ert-deftest lispm-stickies-test-bottom-as-stickies-drew-it ()
-  "The front note's bottom shows Stickies' grow box over the corner, its
-edges in ink; another note's is paper over the edge."
-  (let ((svg (lispm-stickies-draw-bottom 'gray 100 t))
-        (inactive (lispm-stickies-draw-bottom 'gray 100 nil)))
-    (cl-flet ((at (x y) (lispm-stickies-test--pixel svg x y)))
-      (should (equal (list (at 0 3) (at 50 3) (at 50 7)) '("#BBBBBB" "#EEEEEE" "#BBBBBB")))
-      (should (equal (mapcar (lambda (x) (at x 0)) '(95 96 99)) '("#EEEEEE" "#777777" "#777777")))
-      (should (equal (mapcar (lambda (x) (at x 4)) '(92 96 97 99)) '("#777777" "#777777" "#EEEEEE" "#777777")))
-      (should (equal (mapcar (lambda (x) (at x 7)) '(91 92 99)) '("#BBBBBB" "#777777" "#777777"))))
-    (cl-flet ((at (x y) (lispm-stickies-test--pixel inactive x y)))
-      (should (equal (list (at 96 0) (at 99 3) (at 95 7)) '("#EEEEEE" "#BBBBBB" "#BBBBBB"))))))
-
-(ert-deftest lispm-stickies-test-rolled-up-title-bar ()
-  "A note rolled up has a taller title bar, edged at its bottom, its boxes
-in the middle."
-  (let ((svg (lispm-stickies-draw-title-bar 'green 120 17 t)))
-    (cl-flet ((at (x y) (lispm-stickies-test--pixel svg x y)))
-      (should (equal (at 60 16) "#66FF66"))
-      ;; The close box is rows 5 to 11: its top inner line on row 6.
-      (should (equal (list (at 6 6) (at 6 4) (at 11 11)) '("#00EE00" "#66FF66" "#00EE00"))))))
+(ert-deftest lispm-stickies-test-frontend ()
+  "A frontend shows the notes its own way: Stickies asks it to show a
+note, where the notes are before writing them, and tells it of changes."
+  (lispm-stickies-test--with-file
+    (let* ((shown nil)
+           (changed nil)
+           (lispm-stickies-show-note-function (lambda (buffer) (push buffer shown) 'frame))
+           (lispm-stickies-shown-function (lambda (buffer) (memq buffer shown)))
+           (lispm-stickies-front-note-function (lambda () (car shown)))
+           (lispm-stickies-place-function (lambda (_buffer) '((10 20 300 200) . t)))
+           (lispm-stickies-changed-hook (list (lambda () (push (current-buffer) changed))))
+           (note (lispm-stickies-new-note "Hello")))
+      (should (equal shown (list note)))
+      (should (eq (lispm-stickies-show-note note) 'frame))
+      (should (lispm-stickies-running-p))
+      (should (eq (lispm-stickies--current) note))
+      (with-current-buffer note
+        (insert "! "))
+      (should (equal changed (list note)))
+      (should (equal (lispm-stickies-note-place note) '(nil)))
+      (let ((plist (car (lispm-stickies-notes))))
+        (should (equal (plist-get plist :geometry) '(10 20 300 200)))
+        (should (plist-get plist :rolled)))
+      (should (equal (lispm-stickies-note-place note) '((10 20 300 200) . t)))
+      (lispm-stickies-set-note-place note '(1 2 3 4) nil)
+      (should (equal (lispm-stickies-note-place note) '((1 2 3 4))))
+      (should (equal (lispm-stickies-note-id note) (plist-get (car (lispm-stickies-notes)) :id)))
+      (should (equal (lispm-stickies-note-buffers) (list note)))
+      (lispm-stickies-quit)
+      (should-not (lispm-stickies-note-buffers))
+      (should (equal (mapcar #'lispm-stickies-note-title (lispm-stickies-note-buffers t)) '("! Hello"))))))
 
 (ert-deftest lispm-stickies-test-unload ()
-  "Unloaded, Stickies quits and leaves the desktop."
+  "Unloaded, Stickies quits, its notes written."
   (lispm-stickies-test--with-file
     (lispm-stickies-test--note "Bye")
     (lispm-stickies-unload-function)
     (unwind-protect
         (progn
-          (should-not (assq 'stickies lispm-desktop-apps))
           (should-not lispm-stickies--notes)
-          (should-not (memq #'lispm-stickies--moved lispm-desktop-platinum-frame-moved-functions))
+          (should-not (memq #'lispm-stickies-save kill-emacs-hook))
           (should (equal (mapcar (lambda (note) (plist-get note :text))
                                  (lispm-stickies--parse (with-temp-buffer
                                                           (insert-file-contents lispm-stickies-file)
                                                           (buffer-string))))
                          '("Bye"))))
-      (lispm-stickies--setup))))
+      (add-hook 'kill-emacs-hook #'lispm-stickies-save))))
 
 (provide 'lispm-stickies-test)
 ;;; lispm-stickies-test.el ends here
