@@ -2,22 +2,25 @@
 
 #+HTML: <p align="center"><a href="https://github.com/LispMachineLab/lispm-stickies/actions/workflows/test.yml"><img src="https://github.com/LispMachineLab/lispm-stickies/actions/workflows/test.yml/badge.svg" alt="test" /></a></p>
 
-Stickies, Mac OS 9's notes, as an application of [[https://github.com/LispMachineLab/lispm-desktop][LispM Desktop]], which its App Store
-installs from Productivity.  In code, the prefix is ~lispm-stickies-~.
+Stickies, Mac OS 9's notes, in any Emacs 30.1 or later, and an application of [[https://github.com/LispMachineLab/lispm-desktop][LispM Desktop]],
+whose App Store installs it from Productivity.  In code, the prefix is ~lispm-stickies-~.
 
 * What it does
 
-Each note is a small window of its own over the desktop, drawn as Mac OS 9.0.4's Stickies drew
-it, its colours and boxes taken pixel for pixel from the real thing:
-
-- The note in front wears a title bar of pinstripes, with a close box on the left and a zoom box
-  on the right, and a grow box in its corner; the others are plain paper, lit along their top.
-- Seven colours, from the Color menu: Yellow, Blue, Green, Pink, Purple, Gray, Black & White.
-- The close box throws the note away, asking first when it holds text.  Quitting Stickies only
-  puts the notes away: opening it again brings them back where they were.
-- A double click on the title bar rolls the note up into it, its first line for a title.  The
-  zoom box sizes the note to its text, and back.
+- Each note is a buffer on paper of one of Stickies' seven colours: Yellow, Blue, Green, Pink,
+  Purple, Gray, Black & White, from the Stickies menu or =C-c C-l=.
+- =M-x lispm-stickies= opens Stickies on the note in front, in a window of the selected frame;
+  the next and previous notes come in turn into that window.
+- Throwing a note away asks first when it holds text.  Quitting Stickies only puts the notes
+  away: opening it again brings them back.
 - A note is written as it is typed.
+
+In LispM Desktop each note is a small window of its own over the desktop, drawn as Mac OS 9.0.4's
+Stickies drew it, its colours and boxes taken pixel for pixel from the real thing: the note in
+front wears a title bar of pinstripes, with a close box and a zoom box, and a grow box in its
+corner; a double click on the title bar rolls the note up into it, its first line for a title,
+and the zoom box sizes the note to its text, and back.  The desktop draws them from its own side
+(=lisp/lispm-desktop-app-stickies.el= there); Stickies knows nothing of it.
 
 The notes are kept in one org file, =~/.emacs.d/stickies.org= (~lispm-stickies-file~), a heading
 each, so agents and org read them as any other:
@@ -42,9 +45,10 @@ From the keyboard, in a note:
 
 | =C-c C-n= | a new note               | =C-c C-f= | the next note                 |
 | =C-c C-k= | throw the note away      | =C-c C-b= | the previous note             |
-| =C-c C-l= | its colour               | =C-c C-r= | roll it up, or down           |
-| =C-c C-z= | zoom it                  | =C-c C-d= | when it was made and changed  |
+| =C-c C-l= | its colour               | =C-c C-d= | when it was made and changed  |
 | =C-c C-q= | quit Stickies            |           |                               |
+
+LispM Desktop adds =C-c C-r=, to roll a note up or down, and =C-c C-z=, to zoom it.
 
 The notes are written in ~variable-pitch~, as Stickies wrote in Geneva; set ~lispm-stickies-face~
 to nil for Emacs's default.
@@ -58,32 +62,45 @@ Agents and other programs use these, rather than the file, which Stickies writes
 | ~(lispm-stickies-new-note TEXT COLOR)~   | a new note in front, holding ~TEXT~, of ~COLOR~ (~yellow~, ~blue~, ...) |
 | ~(lispm-stickies-set-text BUFFER TEXT)~  | a note's text                                                   |
 | ~(lispm-stickies-set-color COLOR BUFFER)~ | a note's colour                                                |
-| ~(lispm-stickies-show-note BUFFER)~      | a note in front, Stickies opened if it was not                  |
+| ~(lispm-stickies-show-note BUFFER)~      | a note in front                                                 |
 
 LispM Agent's skill for notes, in the App Store's catalog, is made of them.
+
+* For a frontend
+
+A frontend shows the notes its own way by setting these, as LispM Desktop does:
+
+| ~lispm-stickies-show-note-function~  | shows a note's buffer in front, with the keyboard                    |
+| ~lispm-stickies-hide-note-function~  | takes away what shows a note, as it is put away or thrown away       |
+| ~lispm-stickies-shown-function~      | whether a note is shown                                              |
+| ~lispm-stickies-front-note-function~ | the note in front                                                    |
+| ~lispm-stickies-confirm-function~    | asks whether to throw away a note holding text                       |
+| ~lispm-stickies-place-function~      | where a note is shown, before the notes are written                  |
+| ~lispm-stickies-changed-hook~        | run in a note's buffer once its text or colour changed               |
+
+~lispm-stickies-note-buffers~, ~-note-id~, ~-note-color~, ~-note-title~, ~-note-place~,
+~-set-note-place~, ~-color-value~ and ~-save-soon~ give it what it draws and keep where it draws
+it.
 
 * Installation
 
 From LispM Desktop's App Store: Productivity, Stickies, Get.  Removing it there quits Stickies and
 takes it away; the notes stay in their file.
 
-By hand, from a checkout, in an Emacs running LispM Desktop:
+By hand, from a checkout:
 
 #+begin_src emacs-lisp
 (add-to-list 'load-path "~/src/lispm-stickies")
 (require 'lispm-stickies)
 #+end_src
 
-The notes draw their own frame, an edge of their colour, where LispM Desktop lets a window do so
-(~lispm-desktop-platinum-own-frame~); an older desktop frames them as its other windows.
-
 * Tests
 
 #+begin_src sh
-make test LISPM_DESKTOP=../lispm-desktop/lisp
+make test compile
 #+end_src
 
-They need no window system.
+They need no window system, nor LispM Desktop.
 
 * License
 
