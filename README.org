@@ -11,7 +11,8 @@ whose App Store installs it from Productivity.  In code, the prefix is ~lispm-st
   Purple, Gray, Black & White, from the Stickies menu or =C-c C-l=.
 - =M-x lispm-stickies= opens Stickies on the note in front, in a window of the selected frame;
   the next and previous notes come in turn into that window.
-- Throwing a note away asks first when it holds text.  Quitting Stickies only puts the notes
+- Throwing a note away asks first when it holds text, in [[https://github.com/LispMachineLab/lispm-ui][LispM UI]]'s alert where an interface
+  draws it, as LispM Desktop does, else in the minibuffer.  Quitting Stickies only puts the notes
   away: opening it again brings them back.
 - A note is written as it is typed.
 
@@ -74,7 +75,7 @@ A frontend shows the notes its own way by setting these, as LispM Desktop does:
 | ~lispm-stickies-hide-note-function~  | takes away what shows a note, as it is put away or thrown away       |
 | ~lispm-stickies-shown-function~      | whether a note is shown                                              |
 | ~lispm-stickies-front-note-function~ | the note in front                                                    |
-| ~lispm-stickies-confirm-function~    | asks whether to throw away a note holding text                       |
+| ~lispm-stickies-confirm-function~    | asks whether to throw away a note holding text; by default LispM UI's ~lispm-ui-confirm~, which a frontend draws through ~lispm-ui-alert-function~ |
 | ~lispm-stickies-place-function~      | where a note is shown, before the notes are written                  |
 | ~lispm-stickies-changed-hook~        | run in a note's buffer once its text or colour changed               |
 
@@ -84,15 +85,9 @@ it.
 
 * Installation
 
-From LispM Desktop's App Store: Productivity, Stickies, Get.  Removing it there quits Stickies and
-takes it away; the notes stay in their file.
-
-By hand, from a checkout:
-
-#+begin_src emacs-lisp
-(add-to-list 'load-path "~/src/lispm-stickies")
-(require 'lispm-stickies)
-#+end_src
+From LispM Desktop's App Store: Productivity, Stickies, Get.  The App Store installs first what it
+needs, LispM UI and LispM Kit.  Removing it there quits Stickies and takes it away; the notes stay
+in their file.
 
 * Tests
 
@@ -100,7 +95,8 @@ By hand, from a checkout:
 make test compile
 #+end_src
 
-They need no window system, nor LispM Desktop.
+They need no window system, nor LispM Desktop.  LispM UI and LispM Kit are checkouts beside this
+one, or named by ~LISPM_UI~ and ~LISPM_KIT~.
 
 * License
 

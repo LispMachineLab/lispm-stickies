@@ -5,7 +5,7 @@
 ;; Author: Ryan.K
 ;; URL: https://github.com/LispMachineLab/lispm-stickies
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "30.1"))
+;; Package-Requires: ((emacs "30.1") (lispm-ui "0.2.1"))
 ;; Keywords: convenience, outlines
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -35,8 +35,10 @@
 ;; over the desktop, drawn as Stickies drew it.
 ;;
 ;; Opening Stickies brings its notes back.  A note is written as it is
-;; typed.  Throwing a note away asks first when it holds text; quitting
-;; Stickies only puts the notes away.
+;; typed.  Throwing a note away asks first when it holds text, with LispM
+;; UI's `lispm-ui-confirm', in the alert of the interface that draws LispM
+;; UI's, else in the minibuffer; quitting Stickies only puts the notes
+;; away.
 ;;
 ;; The notes are kept in one org file, `lispm-stickies-file', a heading
 ;; each: its first line for a title, its colour, place and dates in its
@@ -80,6 +82,7 @@
 (require 'subr-x)
 (require 'easymenu)
 (require 'face-remap)
+(require 'lispm-ui-ask)
 
 (defconst lispm-stickies-directory
   (file-name-directory (or load-file-name buffer-file-name))
@@ -294,10 +297,12 @@ with is shown.")
   "Function returning the buffer of the note in front, or nil when no
 note is shown.")
 
-(defvar lispm-stickies-confirm-function #'lispm-stickies-yes-or-no-p
+(defvar lispm-stickies-confirm-function #'lispm-stickies-confirm
   "Function asking whether to throw a note holding text away.
 It is called with the question and a sentence saying what it means, and
-returns non-nil to throw the note away.")
+returns non-nil to throw the note away.  By default LispM UI's
+`lispm-ui-confirm' asks, which an interface draws by setting
+`lispm-ui-alert-function'.")
 
 (defvar lispm-stickies-place-function #'ignore
   "Function returning where the note of the buffer it is called with is
@@ -328,10 +333,14 @@ This is `lispm-stickies-front-note-function' by default."
                                   (funcall lispm-stickies-shown-function buffer)))
             (buffer-list)))
 
-(defun lispm-stickies-yes-or-no-p (question detail)
-  "Ask QUESTION, DETAIL after it, with `yes-or-no-p'.
+(defun lispm-stickies-confirm (question detail)
+  "Ask QUESTION, DETAIL under it, with LispM UI's `lispm-ui-confirm', Throw
+Away beside Cancel: in the alert of the interface that draws LispM UI's,
+else with `yes-or-no-p'.
 This is `lispm-stickies-confirm-function' by default."
-  (yes-or-no-p (format "%s %s " question detail)))
+  (lispm-ui-confirm question detail "Throw Away"))
+
+(define-obsolete-function-alias 'lispm-stickies-yes-or-no-p #'lispm-stickies-confirm "0.2.0")
 
 ;;;; A note's buffer
 
