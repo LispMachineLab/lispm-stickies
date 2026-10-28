@@ -23,7 +23,9 @@
 
 ;;; Commentary:
 
-;; Run with `make test'.  They need no window system nor LispM Desktop:
+;; Run with `make test', LispM UI and LispM Kit beside this checkout or
+;; named by LISPM_UI and LISPM_KIT.  They need no window system nor LispM
+;; Desktop:
 ;; notes are read, written, shown in windows of a batch Emacs's frame and
 ;; thrown away.
 
@@ -204,6 +206,28 @@ and what shows it is taken away."
       (should-not lispm-stickies--notes)
       (should-not (lispm-stickies--parse (with-temp-buffer (insert-file-contents lispm-stickies-file)
                                                            (buffer-string)))))))
+
+(ert-deftest lispm-stickies-test-throw-away-asks-in-lispm-ui ()
+  "Throwing a note holding text away asks with LispM UI: in the alert of
+the interface drawing LispM UI's, a caution, Throw Away beside Cancel.
+Cancel, as Escape presses it, keeps the note; Throw Away throws it away."
+  (lispm-stickies-test--with-file
+    (let* ((note (lispm-stickies-test--note "Keep me"))
+           (alerts nil) (press 'cancel)
+           (lispm-ui-alert-function
+            (lambda (icon message buttons detail)
+              (push (list icon message (mapcar #'car buttons) detail) alerts)
+              (nth 1 (seq-find (lambda (button) (eq (nth 2 button) press)) buttons)))))
+      (should (eq lispm-stickies-confirm-function #'lispm-stickies-confirm))
+      (lispm-stickies-close-note note)
+      (should (buffer-live-p note))
+      (should (equal alerts '((caution "Throw this note away?" ("Cancel" "Throw Away")
+                                       "Its text will be lost."))))
+      (setq press 'default)
+      (lispm-stickies-close-note note)
+      (should-not (buffer-live-p note))
+      (should (= (length alerts) 2))
+      (should (eq (symbol-function 'lispm-stickies-yes-or-no-p) 'lispm-stickies-confirm)))))
 
 (ert-deftest lispm-stickies-test-for-programs ()
   "Programs list the notes, read from the file while Stickies is closed,
