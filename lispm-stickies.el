@@ -4,7 +4,7 @@
 
 ;; Author: Ryan.K
 ;; URL: https://github.com/LispMachineLab/lispm-stickies
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "30.1") (lispm-ui "0.2.1"))
 ;; Keywords: convenience, outlines
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
