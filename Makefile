@@ -1,9 +1,8 @@
 EMACS ?= emacs
-# LispM UI, which asks before a note is thrown away, and LispM Kit, whose
-# engine translates LispM UI's words: checkouts beside this one by default.
+# LispM UI (including Kit), which asks before a note is thrown away:
+# a checkout beside this one by default.
 LISPM_UI ?= ../lispm-ui
-LISPM_KIT ?= ../lispm-kit
-LOAD_PATH = -L . -L $(LISPM_UI) -L $(LISPM_KIT)
+LOAD_PATH = -L . -L $(LISPM_UI)
 
 .PHONY: test compile
 
