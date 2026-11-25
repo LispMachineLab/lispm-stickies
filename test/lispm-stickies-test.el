@@ -353,5 +353,48 @@ note, where the notes are before writing them, and tells it of changes."
                          '("Bye"))))
       (add-hook 'kill-emacs-hook #'lispm-stickies-save))))
 
+(ert-deftest lispm-stickies-test-prompts-use-lispm-ui ()
+  "Color picker, import, and export route through `lispm-ui' dialogs."
+  (lispm-stickies-test--with-file
+    (let* ((note (lispm-stickies-test--note "Hello"))
+           (src (make-temp-file "stickies-import"))
+           (dest (expand-file-name "out.txt" temporary-file-directory))
+           (calls nil))
+      (unwind-protect
+          (with-current-buffer note
+            (with-temp-file src (insert "Imported body"))
+            (let ((lispm-ui-choose-function
+                   (lambda (choices current _pos label)
+                     (push (list 'choose label current (length choices)) calls)
+                     '(pink)))
+                  (lispm-ui-choose-file-function
+                   (lambda (&rest args)
+                     (push (cons 'choose-file args) calls)
+                     src))
+                  (lispm-ui-save-file-function
+                   (lambda (&rest args)
+                     (push (cons 'save-file args) calls)
+                     dest)))
+              (call-interactively #'lispm-stickies-set-color)
+              (should (eq lispm-stickies--note-color 'pink))
+              (call-interactively #'lispm-stickies-import-text)
+              (call-interactively #'lispm-stickies-export-text)
+              (should (file-exists-p dest)))
+            (let ((lispm-ui-choose-file-function #'ignore)
+                  (lispm-ui-save-file-function #'ignore))
+              (should (eq (condition-case nil
+                              (progn (call-interactively #'lispm-stickies-import-text) nil)
+                            (quit 'quitted))
+                          'quitted))
+              (should (eq (condition-case nil
+                              (progn (call-interactively #'lispm-stickies-export-text) nil)
+                            (quit 'quitted))
+                          'quitted)))
+            (should (assq 'choose calls))
+            (should (assq 'choose-file calls))
+            (should (assq 'save-file calls)))
+        (delete-file src)
+        (when (file-exists-p dest) (delete-file dest))))))
+
 (provide 'lispm-stickies-test)
 ;;; lispm-stickies-test.el ends here
