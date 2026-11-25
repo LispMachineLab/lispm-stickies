@@ -5,7 +5,7 @@
 ;; Author: Ryan.K
 ;; URL: https://github.com/LispMachineLab/lispm-stickies
 ;; Version: 0.2.1
-;; Package-Requires: ((emacs "30.1") (lispm-ui "0.8.0"))
+;; Package-Requires: ((emacs "30.1") (lispm-ui "0.12.0"))
 ;; Keywords: convenience, outlines
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -609,10 +609,11 @@ did: asked first when it holds text."
     (lispm-stickies-save)))
 
 (defun lispm-stickies--read-color ()
-  "Read a colour of `lispm-stickies-colors' by its name."
-  (let* ((names (mapcar (lambda (color) (cons (nth 1 color) (car color))) lispm-stickies-colors))
-         (name (completing-read "Color: " names nil t)))
-    (alist-get name names nil nil #'equal)))
+  "Read a colour of `lispm-stickies-colors' by its name with `lispm-ui-choose'."
+  (let* ((choices (mapcar (lambda (color) (cons (car color) (nth 1 color)))
+                          lispm-stickies-colors))
+         (chosen (lispm-ui-choose choices lispm-stickies--note-color nil "Color")))
+    (if chosen (car chosen) (signal 'quit nil))))
 
 (defun lispm-stickies-set-color (color &optional buffer)
   "Colour the note BUFFER, by default this one, COLOR, a key of
@@ -653,14 +654,18 @@ did: asked first when it holds text."
 
 (defun lispm-stickies-import-text (file)
   "Open a new note holding the text of FILE."
-  (interactive "fImport text from: ")
+  (interactive
+   (list (or (lispm-ui-choose-file :title "Import Text From")
+             (signal 'quit nil))))
   (lispm-stickies-new-note (with-temp-buffer
                              (insert-file-contents file)
                              (buffer-string))))
 
 (defun lispm-stickies-export-text (file &optional buffer)
   "Write the text of the note BUFFER, by default this one, to FILE."
-  (interactive "FExport text to: ")
+  (interactive
+   (list (or (lispm-ui-save-file :title "Export Text To" :name "note.txt")
+             (signal 'quit nil))))
   (with-current-buffer (or buffer (lispm-stickies--current))
     (write-region nil nil file)))
 
